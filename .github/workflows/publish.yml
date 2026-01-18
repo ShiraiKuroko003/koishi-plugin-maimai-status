@@ -1,0 +1,25 @@
+name: Publish
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+      - name: Check NPM_TOKEN presence
+        run: 'if [ -z "${{ secrets.NPM_TOKEN }}" ]; then echo "NPM_TOKEN missing"; exit 1; else echo "NPM_TOKEN set"; fi'
+      - run: npm ci
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
