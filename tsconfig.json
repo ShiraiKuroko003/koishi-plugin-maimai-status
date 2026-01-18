@@ -9,11 +9,7 @@
     "incremental": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "moduleResolution": "node",
-    "types": [
-      "node",
-      "yml-register/types"
-    ]
+    "moduleResolution": "node"
   },
   "include": [
     "src"
