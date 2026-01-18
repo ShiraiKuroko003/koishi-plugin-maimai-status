@@ -1,5 +1,5 @@
 
-import { Context, h } from 'koishi'
+import { Context, h, Schema } from 'koishi'
 import * as path from 'path'
 import * as fs from 'fs'
 import puppeteer from 'koishi-plugin-puppeteer'
@@ -7,6 +7,9 @@ import puppeteer from 'koishi-plugin-puppeteer'
 export const name = 'maimai-status'
 
 export const inject = ['puppeteer']
+
+export interface Config {}  
+export const Config: Schema<Config> = Schema.object({})
 
 export function apply(ctx: Context) {
   ctx.command('有网吗')
