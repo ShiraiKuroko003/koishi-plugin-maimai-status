@@ -12,11 +12,7 @@
     "esModuleInterop": true,
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "jsxImportSource": "@satorijs/element",
-    "types": [
-      "node",
-      "yml-register/types"
-    ]
+    "jsxImportSource": "@satorijs/element"
   },
   "include": [
     "src"
