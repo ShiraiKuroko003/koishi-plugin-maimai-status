@@ -17,8 +17,6 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           auth-token: ${{ secrets.NPM_TOKEN }}
-      - name: Check NPM_TOKEN presence
-        run: 'if [ -z "${{ secrets.NPM_TOKEN }}" ]; then echo "NPM_TOKEN missing"; exit 1; else echo "NPM_TOKEN set"; fi'
       - run: npm ci
       - run: npm publish --provenance --access public
         env:
