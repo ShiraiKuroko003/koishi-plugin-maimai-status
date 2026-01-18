@@ -18,8 +18,7 @@ export function apply(ctx: Context) {
         page = await ctx.puppeteer.page()
         
         // 构造字体文件路径
-        // const fontPath = path.resolve(__dirname, './assets/msyh.ttf') //  开发路径
-        const fontPath = path.resolve(__dirname, '../assets/msyh.ttf') // 生产路径
+        const fontPath = path.resolve(__dirname, '../assets/msyh.ttf')
         
         let fontDataUrl = ''
         // 读取字体文件并转换为 Base64
