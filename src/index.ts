@@ -16,6 +16,13 @@ let lastScreenshot: Buffer | null = null
 let lastFetchedAt: number | null = null
 
 export function apply(ctx: Context) {
+  // 插件启动时初始化缓存目录
+  const cacheDir = path.resolve(ctx.baseDir, 'cache/maimai-status')
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true })
+    ctx.logger.info(`Created cache directory: ${cacheDir}`)
+  }
+
   ctx.command('有网吗')
     .action(async ({ session }) => {
       const url = "https://status.awmc.cc/status/maimai"
@@ -54,8 +61,7 @@ export function apply(ctx: Context) {
         const fontPath = path.resolve(__dirname, '../assets/msyh.ttf')
         
         // 构造图片缓存路径，降低状态服务器压力
-        const cacheDir = path.resolve(__dirname, 'cache/maimai-status')
-        const cacheFile = path.join(cacheDir, 'maimai-status.png')
+        const cacheFile = path.resolve(ctx.baseDir, 'cache/maimai-status/maimai-status.png')
         
         let fontDataUrl = ''
 
@@ -111,7 +117,6 @@ export function apply(ctx: Context) {
         lastScreenshot = buffer
         lastFetchedAt = Date.now()
         try {
-          if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
           fs.writeFileSync(cacheFile, buffer)
         } catch (writeErr) {
           ctx.logger.warn(`Failed to write cache file: ${writeErr}`)
