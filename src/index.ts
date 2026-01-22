@@ -1,5 +1,5 @@
 
-import { Context, h, Schema } from 'koishi'
+import { Context, h, Schema, sleep } from 'koishi'
 import * as path from 'path'
 import * as fs from 'fs'
 import puppeteer from 'koishi-plugin-puppeteer'
@@ -11,19 +11,60 @@ export const inject = ['puppeteer']
 export interface Config {}  
 export const Config: Schema<Config> = Schema.object({})
 
+// 进程内缓存，5分钟内复用截图
+let lastScreenshot: Buffer | null = null
+let lastFetchedAt: number | null = null
+
 export function apply(ctx: Context) {
   ctx.command('有网吗')
     .action(async ({ session }) => {
       const url = "https://status.awmc.cc/status/maimai"
+      const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      const EXTRA_HEADERS = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Upgrade-Insecure-Requests': '1',
+      }
       let page
-
       try {
-        page = await ctx.puppeteer.page()
+        page = await ctx.puppeteer.page();
+        await page.evaluateOnNewDocument(() => {
+          Object.defineProperty(navigator, 'webdriver', { get: () => false });
+          (window as any).chrome = { runtime: {} };
+          const originalQuery = window.navigator.permissions.query;
+          window.navigator.permissions.query = (parameters: any) => (
+            parameters.name === 'notifications' 
+              ? Promise.resolve({ state: 'denied' } as PermissionStatus)
+              : originalQuery(parameters)
+          );
+          Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5]
+          });
+          Object.defineProperty(navigator, 'languages', {
+            get: () => ['zh-CN', 'zh', 'en']
+          });
+        })
+        await page.setUserAgent(USER_AGENT)
+        await page.setExtraHTTPHeaders(EXTRA_HEADERS)
+        await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 2 })
         
         // 构造字体文件路径
         const fontPath = path.resolve(__dirname, '../assets/msyh.ttf')
         
+        // 构造图片缓存路径，降低状态服务器压力
+        const cacheDir = path.resolve(__dirname, 'cache/maimai-status')
+        const cacheFile = path.join(cacheDir, 'maimai-status.png')
+        
         let fontDataUrl = ''
+
+        // 若缓存仍在 5 分钟内，直接返回缓存
+        if (lastScreenshot && lastFetchedAt && Date.now() - lastFetchedAt < 5 * 60 * 1000) {
+          await session.send(h.image(lastScreenshot, 'image/png'))
+          return
+        }
+
         // 读取字体文件并转换为 Base64
         if (fs.existsSync(fontPath)) {
           const fontBuffer = fs.readFileSync(fontPath)
@@ -34,10 +75,15 @@ export function apply(ctx: Context) {
           ctx.logger.warn(`Font file not found at ${fontPath}`)
         }
         const PAGE_LOAD_TIMEOUT_MS = 30000
+
+
+        await page.setDefaultNavigationTimeout(PAGE_LOAD_TIMEOUT_MS)
         await page.goto(url, {
           waitUntil: 'networkidle2',
           timeout: PAGE_LOAD_TIMEOUT_MS,
         })
+
+        sleep(3);
 
         // 注入字体样式
         await page.evaluate((fontUrl) => {
@@ -58,7 +104,18 @@ export function apply(ctx: Context) {
 
         const buffer = await page.screenshot({
           fullPage: true,
+          path: cacheFile,
         })
+
+        // 更新缓存
+        lastScreenshot = buffer
+        lastFetchedAt = Date.now()
+        try {
+          if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
+          fs.writeFileSync(cacheFile, buffer)
+        } catch (writeErr) {
+          ctx.logger.warn(`Failed to write cache file: ${writeErr}`)
+        }
 
         // 发送图片
         await session.send(h.image(buffer, 'image/png'))
