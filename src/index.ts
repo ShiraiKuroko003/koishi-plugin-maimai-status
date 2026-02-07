@@ -26,7 +26,7 @@ export function apply(ctx: Context) {
   ctx.command('有网吗')
     .action(async ({ session }) => {
       const url = "https://status.awmc.cc/status/maimai"
-      const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+      const USER_AGENT = 'koishiMaiBot Status Check'
       const EXTRA_HEADERS = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;',
