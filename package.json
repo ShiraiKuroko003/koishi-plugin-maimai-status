@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-maimai-status",
   "description": "舞萌现在有网吗?",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "contributors": [
     "ShiraiKuroko003 <shiraikuroko2003@outlook.com>"
   ],

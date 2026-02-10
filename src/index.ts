@@ -8,10 +8,16 @@ export const name = 'maimai-status'
 
 export const inject = ['puppeteer']
 
-export interface Config {}  
-export const Config: Schema<Config> = Schema.object({})
+const cacheTime = 5;
 
-// 进程内缓存，5分钟内复用截图
+export interface Config {
+  cacheTime: number
+}  
+export const Config: Schema<Config> = Schema.object({
+  cacheTime: Schema.number().default(cacheTime).description('图片缓存时间 (分钟)')
+})
+
+// 进程内缓存，设置分钟内复用截图
 let lastScreenshot: Buffer | null = null
 let lastFetchedAt: number | null = null
 
@@ -25,7 +31,8 @@ export function apply(ctx: Context) {
 
   ctx.command('有网吗')
     .action(async ({ session }) => {
-      const url = "https://status.awmc.cc/status/maimai"
+      await session.send('获取数据中，请稍后喵~')
+      const url = "https://status.moriya.blue/status/wahlap"
       const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
       const EXTRA_HEADERS = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -65,8 +72,9 @@ export function apply(ctx: Context) {
         
         let fontDataUrl = ''
 
-        // 若缓存仍在 5 分钟内，直接返回缓存
-        if (lastScreenshot && lastFetchedAt && Date.now() - lastFetchedAt < 5 * 60 * 1000) {
+        // 若缓存仍在 设置 分钟内，直接返回缓存
+        if (lastScreenshot && lastFetchedAt && Date.now() - lastFetchedAt < ctx.config.cacheTime * 60 * 1000) {
+          ctx.logger.info(`在缓存时间内，发送缓存图片`)
           await session.send(h.image(lastScreenshot, 'image/png'))
           return
         }
@@ -76,7 +84,7 @@ export function apply(ctx: Context) {
           const fontBuffer = fs.readFileSync(fontPath)
           const fontBase64 = fontBuffer.toString('base64')
           fontDataUrl = `data:font/ttf;base64,${fontBase64}`
-          ctx.logger.info(`Font loaded: ${fontBuffer.length} bytes`)
+          // ctx.logger.info(`Font loaded: ${fontBuffer.length} bytes`)
         } else {
           ctx.logger.warn(`Font file not found at ${fontPath}`)
         }
