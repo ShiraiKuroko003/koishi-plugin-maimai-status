@@ -5,12 +5,12 @@ on:
     paths-ignore:
       - 'README.md'
       - '**.md'
-      - 'publish.yml'
+
   pull_request:
     paths-ignore:
       - 'README.md'
       - '**.md'
-      - 'publish.yml'
+
 
 jobs:
   publish:
