@@ -2,11 +2,22 @@
 import { Context, h, Schema} from 'koishi'
 import * as path from 'path'
 import * as fs from 'fs'
-
+import puppeteer from 'koishi-plugin-puppeteer'
 
 export const name = 'maimai-status'
 
 export const inject = ['puppeteer']
+
+interface StatusInfo {
+  status: string
+  ping: number
+}
+
+interface ApiResponse {
+  success: boolean
+  lastUpdate: string
+  data: Record<string, StatusInfo>
+}
 
 export interface Config {
   cacheTime: number
@@ -35,7 +46,7 @@ export function apply(ctx: Context) {
         try {
           const response = await ctx.http.get('https://api.shiraikuroko.top/maimai-status/',{
             timeout: 5000
-          })
+          }) as ApiResponse
 
           const { data, lastUpdate } = response
           const entries = Object.entries(data)
@@ -46,9 +57,9 @@ export function apply(ctx: Context) {
 
           // ctx.logger.info(response)
 
-          const isOnline = Object.values(data).every((info:any) => info.status === 'UP')
+          const isOnline = Object.values(data).every((info: StatusInfo) => info.status === 'UP')
 
-          const statusList = Object.entries(response.data).map(([name,info]) => {
+          const statusList = Object.entries(response.data).map(([name, info]: [string, StatusInfo]) => {
             const icon = info.status ==='UP' ? '✅' : '❌'
             return `${icon} ${name} (${info.ping}ms)`
           });
