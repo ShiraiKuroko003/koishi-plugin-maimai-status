@@ -1,20 +1,20 @@
 
-import { Context, h, Schema, sleep } from 'koishi'
+import { Context, h, Schema} from 'koishi'
 import * as path from 'path'
 import * as fs from 'fs'
-import puppeteer from 'koishi-plugin-puppeteer'
+
 
 export const name = 'maimai-status'
 
 export const inject = ['puppeteer']
 
-const cacheTime = 5;
-
 export interface Config {
   cacheTime: number
+  sendText: boolean
 }  
 export const Config: Schema<Config> = Schema.object({
-  cacheTime: Schema.number().default(cacheTime).description('图片缓存时间 (分钟)')
+  cacheTime: Schema.number().default(5).description('图片缓存时间 (分钟)'),
+  sendText: Schema.boolean().default(true).description('是否默认发送文字版播报')
 })
 
 // 进程内缓存，设置分钟内复用截图
@@ -31,25 +31,72 @@ export function apply(ctx: Context) {
 
   ctx.command('有网吗')
     .action(async ({ session }) => {
-      await session.send('获取数据中，请稍后喵~')
-      const url = "https://status.moriya.blue/status/wahlap"
-      const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-      const EXTRA_HEADERS = {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Upgrade-Insecure-Requests': '1',
+      if (ctx.config.sendText) {
+        try {
+          const response = await ctx.http.get('https://api.shiraikuroko.top/maimai-status/',{
+            timeout: 5000
+          })
+
+          const { data, lastUpdate } = response
+          const entries = Object.entries(data)
+
+          if (entries.length === 0) {
+            return '当前没有获取到任何服务器状态数据，请注意及时更新插件或者检查网络喵~'
+          }
+
+          // ctx.logger.info(response)
+
+          const isOnline = Object.values(data).every((info:any) => info.status === 'UP')
+
+          const statusList = Object.entries(response.data).map(([name,info]) => {
+            const icon = info.status ==='UP' ? '✅' : '❌'
+            return `${icon} ${name} (${info.ping}ms)`
+          });
+
+          // ctx.logger.info(`上次更新时间：${response.lastUpdate}`);
+          // ctx.logger.info(statusList);
+
+          const sendStatus = [
+            ...statusList,
+            '',
+            `更新时间：${lastUpdate || '未知'}`,
+          ].join('\n')
+
+          const img = path.resolve(__dirname, isOnline ? '../assets/green.png' : '../assets/gray.png')
+          await session.send([
+            h.image(fs.readFileSync(img),'image/png'),
+            h.text(sendStatus)
+          ])
+        
+        } catch (err) {
+          ctx.logger.error(`Error:`, err)
+          return `数据获取失败，请查看后台日志喵~`
+        }
+        return
       }
+
+      await session.send('获取数据中，请稍后喵~')
+      // 使用缓存
+      const cacheFile = path.resolve(ctx.baseDir, 'cache/maimai-status/maimai-status.png')
+      if (lastScreenshot && lastFetchedAt && Date.now() - lastFetchedAt < ctx.config.cacheTime * 60 * 1000) {
+        ctx.logger.info(`在缓存时间内，发送缓存图片`)
+        await session.send(h.image(lastScreenshot, 'image/png'))
+        return
+      }
+      const url = "https://status.moriya.blue/status/wahlap"
+
       let page
+
       try {
         page = await ctx.puppeteer.page();
         await page.evaluateOnNewDocument(() => {
           Object.defineProperty(navigator, 'webdriver', { get: () => false });
+          Object.defineProperty(navigator, 'language', { get: () => 'zh-CN' });
+          Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh'] });
           (window as any).chrome = { runtime: {} };
           const originalQuery = window.navigator.permissions.query;
           window.navigator.permissions.query = (parameters: any) => (
-            parameters.name === 'notifications' 
+            parameters.name === 'notifications'
               ? Promise.resolve({ state: 'denied' } as PermissionStatus)
               : originalQuery(parameters)
           );
@@ -60,59 +107,16 @@ export function apply(ctx: Context) {
             get: () => ['zh-CN', 'zh', 'en']
           });
         })
-        await page.setUserAgent(USER_AGENT)
-        await page.setExtraHTTPHeaders(EXTRA_HEADERS)
+
         await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 2 })
-        
-        // 构造字体文件路径
-        const fontPath = path.resolve(__dirname, '../assets/msyh.ttf')
-        
-        // 构造图片缓存路径，降低状态服务器压力
-        const cacheFile = path.resolve(ctx.baseDir, 'cache/maimai-status/maimai-status.png')
-        
-        let fontDataUrl = ''
 
-        // 若缓存仍在 设置 分钟内，直接返回缓存
-        if (lastScreenshot && lastFetchedAt && Date.now() - lastFetchedAt < ctx.config.cacheTime * 60 * 1000) {
-          ctx.logger.info(`在缓存时间内，发送缓存图片`)
-          await session.send(h.image(lastScreenshot, 'image/png'))
-          return
-        }
-
-        // 读取字体文件并转换为 Base64
-        if (fs.existsSync(fontPath)) {
-          const fontBuffer = fs.readFileSync(fontPath)
-          const fontBase64 = fontBuffer.toString('base64')
-          fontDataUrl = `data:font/ttf;base64,${fontBase64}`
-          // ctx.logger.info(`Font loaded: ${fontBuffer.length} bytes`)
-        } else {
-          ctx.logger.warn(`Font file not found at ${fontPath}`)
-        }
         const PAGE_LOAD_TIMEOUT_MS = 30000
-
 
         await page.setDefaultNavigationTimeout(PAGE_LOAD_TIMEOUT_MS)
         await page.goto(url, {
           waitUntil: 'networkidle2',
           timeout: PAGE_LOAD_TIMEOUT_MS,
         })
-
-        sleep(3);
-
-        // 注入字体样式
-        await page.evaluate((fontUrl) => {
-          const style = document.createElement('style')
-            style.textContent = `
-              @font-face {
-                font-family: 'YaHei';
-                src: url('${fontUrl}') format('truetype');
-              }
-              * {
-                font-family: 'YaHei', 'Microsoft YaHei', 'SimHei', sans-serif !important;
-              }
-            `
-          document.head.appendChild(style)
-        }, fontDataUrl)
 
         await new Promise(resolve => setTimeout(resolve, 500))
 
