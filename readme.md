@@ -1,3 +1,9 @@
+
+<p align="center">
+<a href="https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status">
+<img width="130" alt="有网吗" src="https://github.com/user-attachments/assets/3c4f11d1-1a5c-46a2-9df9-aab44ff911d6" />
+<a>
+
 # koishi-plugin-maimai-status
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-maimai-status?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-maimai-status)
