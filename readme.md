@@ -1,7 +1,7 @@
 
 <p align="center">
 <a href="https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status">
-<img width="130" alt="有网吗" src="https://github.com/user-attachments/assets/21f2679d-557f-42c3-81e7-f65fbb604ac4" />
+<img width="130" alt="logo" src="https://github.com/user-attachments/assets/79873a20-7607-4394-879a-7f87d9179fb6" />
 <a>
 
 # koishi-plugin-maimai-status
