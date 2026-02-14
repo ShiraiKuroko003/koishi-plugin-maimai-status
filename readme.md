@@ -1,7 +1,7 @@
 
 <p align="center">
 <a href="https://github.com/ShiraiKuroko003/koishi-plugin-maimai-status">
-<img width="130" alt="logo" src="https://github.com/user-attachments/assets/79873a20-7607-4394-879a-7f87d9179fb6" />
+<img width="130" alt="logo" src="https://github.com/user-attachments/assets/36d2863a-2f66-45cd-b6e2-35e4a2a735e6" />
 <a>
 
 # koishi-plugin-maimai-status
