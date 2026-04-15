@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-maimai-status",
   "description": "舞萌现在有网吗?",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "contributors": [
     "ShiraiKuroko003 <shiraikuroko2003@outlook.com>"
   ],
@@ -36,5 +36,8 @@
     "koishi": "^4.18.7",
     "koishi-plugin-puppeteer": "^3.9.0",
     "typescript": "^5.6.0"
-  }
+  },
+  "icons": [
+    "https://github.com/user-attachments/assets/7c757f68-6d71-4d44-b89c-320ef6569ce8"
+  ]
 }

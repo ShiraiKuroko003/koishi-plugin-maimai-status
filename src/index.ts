@@ -1,157 +1,220 @@
 
-import { Context, h, Schema} from 'koishi'
+import { Context, h, Schema } from 'koishi'
 import * as path from 'path'
 import * as fs from 'fs'
-import puppeteer from 'koishi-plugin-puppeteer'
 
 export const name = 'maimai-status'
 
-export const inject = ['puppeteer']
+interface StatusPageMonitor {
+  id: number
+  name: string
+  type: string
+}
 
-interface StatusInfo {
-  status: string
+interface StatusPageGroup {
+  id: number
+  name: string
+  monitorList: StatusPageMonitor[]
+}
+
+interface StatusPageIncident {
+  id: number
+  style: string
+  title: string
+  content: string
+  pin: boolean
+  active: boolean
+  createdDate: string
+}
+
+interface StatusPageMaintenance {
+  id: number
+  title: string
+  active: boolean
+  interval: number
+}
+
+interface StatusPageResponse {
+  publicGroupList?: StatusPageGroup[]
+  incidents?: StatusPageIncident[]
+  maintenanceList?: StatusPageMaintenance[]
+}
+
+interface HeartbeatInfo {
+  status: number
+  time: string
+  msg: string
   ping: number
 }
 
-interface ApiResponse {
-  success: boolean
-  lastUpdate: string
-  data: Record<string, StatusInfo>
+interface HeartbeatResponse {
+  heartbeatList?: Record<string, HeartbeatInfo[]>
 }
 
 export interface Config {
-  cacheTime: number
-  sendText: boolean
-}  
+  timeout: number
+}
+
 export const Config: Schema<Config> = Schema.object({
-  cacheTime: Schema.number().default(5).description('图片缓存时间 (分钟)'),
-  sendText: Schema.boolean().default(true).description('是否默认发送文字版播报')
+  "timeout": Schema.number().default(5000).description("若频繁出现连接超时报错，请适当提高该值，默认值为5000毫秒"),
 })
 
-// 进程内缓存，设置分钟内复用截图
-let lastScreenshot: Buffer | null = null
-let lastFetchedAt: number | null = null
-
-export function apply(ctx: Context) {
-  // 插件启动时初始化缓存目录
-  const cacheDir = path.resolve(ctx.baseDir, 'cache/maimai-status')
-  if (!fs.existsSync(cacheDir)) {
-    fs.mkdirSync(cacheDir, { recursive: true })
-    ctx.logger.info(`Created cache directory: ${cacheDir}`)
+function getStatusIcon(status?: number) {
+  switch (status) {
+    case 1:
+      return '✅'
+    case 0:
+      return '❌'
+    case 2:
+      return '⚠️'
+    case 3:
+      return '🛠️'
+    default:
+      return '❔'
   }
+}
+
+function getStatusText(status?: number) {
+  switch (status) {
+    case 1:
+      return '正常'
+    case 0:
+      return '离线'
+    case 2:
+      return '异常'
+    case 3:
+      return '维护中'
+    default:
+      return '未知'
+  }
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value.endsWith('Z') ? value : `${value.replace(' ', 'T')}Z`)
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+async function fetchStatus(ctx: Context, config: Config) {
+  const [page, heartbeat] = await Promise.all([
+    ctx.http.get(`https://status.awmc.cc/api/status-page/maimai`, { timeout: config.timeout }) as Promise<StatusPageResponse>,
+    ctx.http.get(`https://status.awmc.cc/api/status-page/heartbeat/maimai`, { timeout: config.timeout }) as Promise<HeartbeatResponse>,
+  ])
+
+  return { page, heartbeat }
+}
+
+function buildStatusText(page: StatusPageResponse, heartbeat: HeartbeatResponse) {
+  const groups = page.publicGroupList ?? []
+  const incidents = (page.incidents ?? []).filter((incident) => incident.active)
+  const maintenanceList = (page.maintenanceList ?? []).filter((maintenance) => maintenance.active)
+  const heartbeatList = heartbeat.heartbeatList ?? {}
+
+  const lines: string[] = []
+
+  if (incidents.length > 0) {
+    lines.push('公告与故障：')
+    for (const incident of incidents) {
+      lines.push(`- ${incident.title}`)
+    }
+    lines.push('')
+  }
+
+  if (maintenanceList.length > 0) {
+    lines.push('计划维护：')
+    for (const maintenance of maintenanceList) {
+      lines.push(`- ${maintenance.title}`)
+    }
+    lines.push('')
+  }
+
+  for (const group of groups) {
+    lines.push(group.name)
+    for (const monitor of group.monitorList) {
+      const latestHeartbeat = heartbeatList[String(monitor.id)]?.[0]
+      const icon = getStatusIcon(latestHeartbeat?.status)
+      const statusText = getStatusText(latestHeartbeat?.status)
+      const ping = latestHeartbeat?.ping ?? '未知'
+      lines.push(`- ${icon} ${monitor.name}（${statusText}，${ping}ms）`)
+    }
+    lines.push('')
+  }
+
+  const latestTime = Object.values(heartbeatList)
+    .flat()
+    .map((item) => item.time)
+    .filter(Boolean)
+    .sort()
+    .at(-1)
+
+  lines.push(`更新时间：${latestTime ? formatDateTime(latestTime) : '未知'}`)
+
+  return lines.join('\n').trim()
+}
+
+function isHealthy(page: StatusPageResponse, heartbeat: HeartbeatResponse) {
+  const groups = page.publicGroupList ?? []
+  const incidents = (page.incidents ?? []).filter((incident) => incident.active)
+  const maintenanceList = (page.maintenanceList ?? []).filter((maintenance) => maintenance.active)
+  const heartbeatList = heartbeat.heartbeatList ?? {}
+
+  const targetGroups = groups.filter((group) =>
+    /CMCC|CT|CU/.test(group.name)
+  )
+
+  const lineHealthStatuses = targetGroups.map((group) => {
+    const statuses = group.monitorList.map(
+      (monitor) => heartbeatList[String(monitor.id)]?.[0]?.status
+    )
+
+    return statuses.length > 0 && statuses.every((status) => status === 1)
+  })
+  
+  if (lineHealthStatuses.length === 0) return false
+
+  const allLinesDown = lineHealthStatuses.every((healthy) => !healthy)
+
+  return (
+    incidents.length === 0 &&
+    maintenanceList.length === 0 &&
+    !allLinesDown
+  )
+}
+
+export function apply(ctx: Context, config: Config) {
 
   ctx.command('有网吗')
     .action(async ({ session }) => {
-      if (ctx.config.sendText) {
-        try {
-          const response = await ctx.http.get('https://api.shiraikuroko.top/maimai-status/',{
-            timeout: 5000
-          }) as ApiResponse
-
-          const { data, lastUpdate } = response
-          const entries = Object.entries(data)
-
-          if (entries.length === 0) {
-            return '当前没有获取到任何服务器状态数据，请注意及时更新插件或者检查网络喵~'
-          }
-
-          // ctx.logger.info(response)
-
-          const isOnline = Object.values(data).every((info: StatusInfo) => info.status === 'UP')
-
-          const statusList = Object.entries(response.data).map(([name, info]: [string, StatusInfo]) => {
-            const icon = info.status ==='UP' ? '✅' : '❌'
-            return `${icon} ${name} (${info.ping}ms)`
-          });
-
-          // ctx.logger.info(`上次更新时间：${response.lastUpdate}`);
-          // ctx.logger.info(statusList);
-
-          const sendStatus = [
-            ...statusList,
-            '',
-            `更新时间：${lastUpdate || '未知'}`,
-          ].join('\n')
-
-          const img = path.resolve(__dirname, isOnline ? '../assets/green.png' : '../assets/gray.png')
-          await session.send([
-            h.image(fs.readFileSync(img),'image/png'),
-            h.text(sendStatus)
-          ])
-        
-        } catch (err) {
-          ctx.logger.error(`Error:`, err)
-          return `数据获取失败，请查看后台日志喵~`
-        }
-        return
-      }
-
-      await session.send('获取数据中，请稍后喵~')
-      // 使用缓存
-      const cacheFile = path.resolve(ctx.baseDir, 'cache/maimai-status/maimai-status.png')
-      if (lastScreenshot && lastFetchedAt && Date.now() - lastFetchedAt < ctx.config.cacheTime * 60 * 1000) {
-        ctx.logger.info(`在缓存时间内，发送缓存图片`)
-        await session.send(h.image(lastScreenshot, 'image/png'))
-        return
-      }
-      const url = "https://status.moriya.blue/status/wahlap"
-
-      let page
-
       try {
-        page = await ctx.puppeteer.page();
-        await page.evaluateOnNewDocument(() => {
-          Object.defineProperty(navigator, 'webdriver', { get: () => false });
-          Object.defineProperty(navigator, 'language', { get: () => 'zh-CN' });
-          Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh'] });
-          (window as any).chrome = { runtime: {} };
-          const originalQuery = window.navigator.permissions.query;
-          window.navigator.permissions.query = (parameters: any) => (
-            parameters.name === 'notifications'
-              ? Promise.resolve({ state: 'denied' } as PermissionStatus)
-              : originalQuery(parameters)
-          );
-          Object.defineProperty(navigator, 'plugins', {
-            get: () => [1, 2, 3, 4, 5]
-          });
-          Object.defineProperty(navigator, 'languages', {
-            get: () => ['zh-CN', 'zh', 'en']
-          });
-        })
+        const { page, heartbeat } = await fetchStatus(ctx, config)
+        const groups = page.publicGroupList ?? []
 
-        await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 2 })
-
-        const PAGE_LOAD_TIMEOUT_MS = 30000
-
-        await page.setDefaultNavigationTimeout(PAGE_LOAD_TIMEOUT_MS)
-        await page.goto(url, {
-          waitUntil: 'networkidle2',
-          timeout: PAGE_LOAD_TIMEOUT_MS,
-        })
-
-        await new Promise(resolve => setTimeout(resolve, 500))
-
-        const buffer = await page.screenshot({
-          fullPage: true,
-          path: cacheFile,
-        })
-
-        // 更新缓存
-        lastScreenshot = buffer
-        lastFetchedAt = Date.now()
-        try {
-          fs.writeFileSync(cacheFile, buffer)
-        } catch (writeErr) {
-          ctx.logger.warn(`Failed to write cache file: ${writeErr}`)
+        if (groups.length === 0) {
+          return '当前没有获取到任何服务器状态数据，请检查状态页配置或网络喵~'
         }
 
-        // 发送图片
-        await session.send(h.image(buffer, 'image/png'))
-      } catch (err) {
-        ctx.logger.error(err)
-        return '截图失败，详见后台日志'
-      } finally {
-        if (page) await page.close()
+        const sendStatus = buildStatusText(page, heartbeat)
+        const img = path.resolve(__dirname, isHealthy(page, heartbeat) ? '../assets/green.png' : '../assets/gray.png')
+
+        if (!session) {
+          return sendStatus
+        }
+          await session.send([
+            h.image(fs.readFileSync(img), 'image/png'),
+            h.text(sendStatus),
+          ])
+        }
+      catch (err) {
+        ctx.logger.error('Error:', err)
+        return '数据获取失败，请查看后台日志喵~'
       }
     })
 }
