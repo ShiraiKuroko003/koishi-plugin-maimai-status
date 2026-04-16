@@ -113,7 +113,8 @@ async function fetchStatus(ctx: Context, config: Config) {
 }
 
 function buildStatusText(page: StatusPageResponse, heartbeat: HeartbeatResponse) {
-  const groups = page.publicGroupList ?? []
+  // const groups = page.publicGroupList ?? []
+  const groups = (page.publicGroupList ?? []).filter((group) => /CMCC/.test(group.name))
   const incidents = (page.incidents ?? []).filter((incident) => incident.active)
   const maintenanceList = (page.maintenanceList ?? []).filter((maintenance) => maintenance.active)
   const heartbeatList = heartbeat.heartbeatList ?? {}
@@ -167,7 +168,8 @@ function isHealthy(page: StatusPageResponse, heartbeat: HeartbeatResponse) {
   const heartbeatList = heartbeat.heartbeatList ?? {}
 
   const targetGroups = groups.filter((group) =>
-    /CMCC|CT|CU/.test(group.name)
+    // /CMCC|CT|CU/.test(group.name)
+       /CMCC/.test(group.name)
   )
 
   const lineHealthStatuses = targetGroups.map((group) => {
@@ -195,8 +197,8 @@ export function apply(ctx: Context, config: Config) {
     .action(async ({ session }) => {
       try {
         const { page, heartbeat } = await fetchStatus(ctx, config)
-        const groups = page.publicGroupList ?? []
-
+        // const groups = page.publicGroupList ?? []
+        const groups = (page.publicGroupList ?? []).filter((group) => /CMCC/.test(group.name))
         if (groups.length === 0) {
           return '当前没有获取到任何服务器状态数据，请检查状态页配置或网络喵~'
         }
